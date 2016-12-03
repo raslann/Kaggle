@@ -1,0 +1,25 @@
+from util import *
+from pyspark.mllib.classification import LogisticRegressionWithSGD
+from pyspark.mllib.regression import LabeledPoint
+from numpy import array
+
+sc, sqlContext = init_spark(verbose_logging='DEBUG', show_progress=False)
+sc.addPyFile('until.py')
+
+df = sqlContext.read.parquet('train_transformed')
+
+#parse the data
+def mapper(r):
+    return LabeledPoint(r.label, r.features)
+
+df = df.map(mapper)
+
+#random split with 20% for training (remove this once you finish) 
+train, test = df.randomSplit([0.2, 0.8]) 
+
+#build the model
+model = LogisticRegressionWithSGD.train(train)
+print "Coefficients: " + str(model.coefficients)
+print "Intercept: " + str(model.intercept) 
+
+

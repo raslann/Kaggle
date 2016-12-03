@@ -1,0 +1,190 @@
+
+from util import *
+from pyspark.sql import *
+from pyspark.sql.types import *
+from pyspark.mllib.linalg import *
+from pyspark.mllib.classification import *
+from pyspark.mllib.regression import *
+from pyspark.ml.feature import *
+import numpy as NP
+
+sc, sqlContext = init_spark(verbose_logging='INFO', show_progress=False)
+sc.addPyFile('util.py')
+
+clicks_train = read_hdfs_csv(sqlContext, 'clicks_actual_train.csv')
+clicks_valid = read_hdfs_csv(sqlContext, 'clicks_validation.csv')
+clicks_test = read_hdfs_csv(sqlContext, 'clicks_lab_test.csv')
+doc_cat = read_hdfs_csv(sqlContext, 'documents_categories.csv')
+doc_ent = read_hdfs_csv(sqlContext, 'documents_entities.csv')
+doc_top = read_hdfs_csv(sqlContext, 'documents_topics.csv')
+doc_meta = read_hdfs_csv(sqlContext, 'documents_meta.csv')
+events = read_hdfs_csv(sqlContext, 'events.csv')
+promo = read_hdfs_csv(sqlContext, 'promoted_content.csv')
+page_views = read_hdfs_csv(sqlContext, 'page_views.csv')
+
+print '==============================='
+print 'Data loaded'
+print '==============================='
+
+# Each sample contains the following features in this order:
+# User ID
+# Document category
+# Document topic
+# Document entity
+# Ad publisher ID
+# Ad campaign ID
+# Document source ID
+# Document publisher ID
+# Number of clicks on an Ad
+# Number of browses on an Ad
+# Click/browse ratio of an Ad
+
+# Compute the offset for each feature on the sparse vector.
+num_docs = nunique(page_views, page_views.document_id)
+num_cats = nunique(doc_cat, doc_cat.category_id)
+num_ents = nunique(doc_ent, doc_ent.entity_id)
+num_tops = nunique(doc_top, doc_top.topic_id)
+num_advs = nunique(promo, promo.advertiser_id)
+num_cams = nunique(promo, promo.campaign_id)
+num_srcs = nunique(doc_meta, doc_meta.source_id)
+num_pubs = nunique(doc_meta, doc_meta.publisher_id)
+num_ad_meta = 3
+
+(off_docs, off_cats, off_ents, off_tops, off_advs, off_cams,
+    off_srcs, off_pubs, off_ad_cats, off_ad_ents, off_ad_tops,
+    off_ad_srcs, off_ad_pubs, off_ad_meta, vecsize) = (
+        NP.cumsum([
+            0, num_docs, num_cats, num_ents, num_tops, num_advs, num_cams,
+            num_srcs, num_pubs, num_cats, num_ents, num_tops,
+            num_srcs, num_pubs, num_ad_meta
+            ])
+        )
+
+print '==============================='
+print 'Documents: %d' % num_docs, off_docs
+print 'Categories: %d' % num_cats, off_cats
+print 'Entities: %d' % num_ents, off_ents
+print 'Topics: %d' % num_tops, off_tops
+print 'Advertisers: %d' % num_advs, off_advs
+print 'Campaigns: %d' % num_cams, off_cams
+print 'Sources: %d' % num_srcs, off_srcs
+print 'Publishers: %d' % num_pubs, off_pubs
+print '==============================='
+
+
+doc_cat_idx = sqlContext.read.parquet('doc_cat_idx')
+doc_ent_idx = sqlContext.read.parquet('doc_ent_idx')
+doc_top_idx = sqlContext.read.parquet('doc_top_idx')
+doc_idx = sqlContext.read.parquet('doc_idx')
+adv_idx = sqlContext.read.parquet('adv_idx')
+cam_idx = sqlContext.read.parquet('cam_idx')
+ad_idx = sqlContext.read.parquet('ad_idx')
+src_idx = sqlContext.read.parquet('src_idx')
+pub_idx = sqlContext.read.parquet('pub_idx')
+uuid_idx = sqlContext.read.parquet('uuid_idx')
+
+page_views_idx = page_views.join(doc_idx, on='document_id')
+page_views_idx = page_views_idx.join(uuid_idx, on='uuid')
+
+# Sanity checks...
+assert doc_cat_idx.count() == doc_cat.count()
+assert doc_ent_idx.count() == doc_ent.count()
+assert doc_top_idx.count() == doc_top.count()
+print '==============================='
+print 'Feature index established'
+print '==============================='
+
+adv_vecs = sqlContext.read.parquet('adv_vecs')
+cam_vecs = sqlContext.read.parquet('cam_vecs')
+uuid_vecs = sqlContext.read.parquet('uuid_vecs')
+doc_vecs = sqlContext.read.parquet('doc_vecs')
+page_views_count = sqlContext.read.parquet('page_views_count')
+ad_meta_vecs = sqlContext.read.parquet('ad_meta_vecs')
+
+print '==============================='
+print 'Vectors loaded'
+print '==============================='
+
+vec_columns = [
+        'uuid_vec',
+        'category_vec',
+        'entity_vec',
+        'topic_vec',
+        'advertiser_vec',
+        'campaign_vec',
+        'source_vec',
+        'publisher_vec',
+        'ad_category_vec',
+        'ad_entity_vec',
+        'ad_topic_vec',
+        'ad_source_vec',
+        'ad_publisher_vec',
+        'ad_meta_vec',
+        ]
+off_columns = [off_docs, off_cats, off_ents, off_tops, off_advs,
+               off_cams, off_srcs, off_pubs, off_ad_cats, off_ad_ents,
+               off_ad_tops, off_ad_srcs, off_ad_pubs, off_ad_meta]
+
+def vecshift(r):
+    rowdict = {
+            'display_id': r['display_id'],
+            'ad_id': r['ad_id'],
+            'clicked': r['clicked'],
+            }
+    for c, off in zip(vec_columns, off_columns):
+        rowdict[c] = sparse_vector_rshift(r[c], vecsize, off)
+    return Row(**rowdict)
+
+
+def vecsum(r):
+    vec = reduce(sparse_vector_add, [r[c] for c in vec_columns])
+    return r['display_id'], r['ad_id'], r['clicked'], vec
+
+
+def transform_dataset(df):
+    newdf = (df
+             .join(events, on='display_id')
+             .select('uuid', 'document_id', 'ad_id', 'clicked', 'display_id')
+             .withColumnRenamed('document_id', 'display_document_id')
+             .join(promo, on='ad_id')
+             .join(ad_meta_vecs, on='ad_id')
+             .join(adv_vecs, on='advertiser_id')
+             .drop('advertiser_id')
+             .join(doc_vecs, on='document_id')
+             .drop('document_id')
+             .withColumnRenamed('category_vec', 'ad_category_vec')
+             .withColumnRenamed('entity_vec', 'ad_entity_vec')
+             .withColumnRenamed('topic_vec', 'ad_topic_vec')
+             .withColumnRenamed('source_vec', 'ad_source_vec')
+             .withColumnRenamed('publisher_vec', 'ad_publisher_vec')
+             .join(cam_vecs, on='campaign_id')
+             .drop('campaign_id')
+             .join(uuid_vecs, on='uuid')
+             .drop('uuid')
+             .withColumnRenamed('display_document_id', 'document_id')
+             .join(doc_vecs, on='document_id')
+             .drop('document_id'))
+    print '###### Schema check'
+    print newdf.schema
+    newdf = newdf.map(vecshift).toDF()
+    print '###### Schema check'
+    print newdf.schema
+    return newdf.map(vecsum)
+
+
+def transform_dataset_to_df(df):
+    newdf = transform_dataset(df).toDF()
+    print '###### Schema check'
+    print newdf.schema
+    return newdf.toDF('display_id', 'ad_id', 'label', 'features')
+
+
+print '==============================='
+print 'Transforming dataset for training'
+print '==============================='
+train_set = transform_dataset_to_df(clicks_train)
+train_set.write.parquet('train_transformed_withpv')
+valid_set = transform_dataset_to_df(clicks_valid)
+valid_set.write.parquet('valid_transformed_withpv')
+test_set = transform_dataset_to_df(clicks_test)
+test_set.write.parquet('test_transformed_withpv')

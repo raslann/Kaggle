@@ -93,8 +93,8 @@ def sparse_vector_rshift(v, size, off):
 
 
 def sparse_vector_concat(vlist):
-    size_list = [0] + [v.size for v in vlist]
-    off_list = NP.cumsum(size_list)[:-1]
+    size_list = [v.size for v in vlist]
+    off_list = NP.cumsum(size_list)
     newsize = sum(size_list)
     newvlist = [sparse_vector_rshift(v, newsize, off)
                 for v, off in zip(vlist, off_list)]

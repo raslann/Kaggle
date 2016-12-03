@@ -73,7 +73,7 @@ print '==============================='
 # Add a column for each document table representing the category/entity/topic
 # index.
 
-new_idx = False
+new_idx = True
 
 if new_idx:
     doc_cat_idx = persist(zip_index(doc_cat, 'category_id', 'category_idx'))

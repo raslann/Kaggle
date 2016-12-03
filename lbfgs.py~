@@ -19,7 +19,7 @@ for regParam in regs:
     print '==============================='
     print 'Trying reg param %f' % regParam
     print '==============================='
-    model = LogisticRegressionWithLBFGS.train(
+    model = SVMWithSGD.train(
             train_set,
             regParam=regParam,
             intercept=True
