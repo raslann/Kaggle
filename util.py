@@ -88,6 +88,19 @@ def sparse_vector_add(v1, v2):
     return Vectors.sparse(v1.size, indices, values)
 
 
+def sparse_vector_mul(v1, v2):
+    if not (is_none_or_instance(v1, SparseVector) and
+            is_none_or_instance(v2, SparseVector)):
+        raise TypeError('v1 and v2 are not SparseVectors')
+    if v1.size != v2.size:
+        raise ValueError('v1 and v2 are not of same size')
+    d1 = dict(zip(v1.indices, v1.values))
+    d2 = dict(zip(v2.indices, v2.values))
+    indices = sorted(list(set(v1.indices) & set(v2.indices)))
+    values = [d1[i] * d2[i] for i in indices]
+    return Vectors.sparse(v1.size, indices, values)
+
+
 def sparse_vector_rshift(v, size, off):
     return Vectors.sparse(size, [i + off for i in v.indices], v.values)
 

@@ -10,9 +10,9 @@ pvc = sqlContext.read.parquet('page_views_count')
 
 # Default 200 partitions overrun memory
 upm = (pvc.map(lambda r: (r['uuid_idx'], r['document_idx'], r['count']))
-       .repartition(500))
+       .repartition(600))
 
-model = ALS.trainImplicit(upm, 100, alpha=40.)
+model = ALS.train(upm, 100)
 
 user_factors = model.userFeatures().map(
         lambda r: Row(uuid_idx=r[0], uuid_factor=Vectors.dense(r[1]))

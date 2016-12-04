@@ -46,22 +46,37 @@ print '==============================='
 
 adv_vecs = sqlContext.read.parquet('adv_vecs')
 cam_vecs = sqlContext.read.parquet('cam_vecs')
-uuid_vecs = sqlContext.read.parquet('uuid_vecs')
 doc_vecs_concat = sqlContext.read.parquet('doc_vecs_concat')
 ad_meta_vecs = sqlContext.read.parquet('ad_meta_vecs')
+user_profile = (sqlContext.read.parquet('user_profile')
+                .toDF('uuid', 'user_profile'))
 
 print '==============================='
 print 'Vectors loaded'
 print '==============================='
 
 feature_columns = [
-        'uuid_vec',
         'advertiser_vec',
         'campaign_vec',
         'ad_meta_vec',
         'document_vec',
         'ad_document_vec',
+        'user_profile',
+        'user_ad_prod',
+        'doc_ad_prod',
+        'user_doc_prod',
         ]
+
+
+def profile_factor_mapper(r):
+    row_dict = r.asDict()
+    user_doc_prod = sparse_vector_mul(r['user_profile'], r['document_vec'])
+    doc_ad_prod = sparse_vector_mul(r['document_vec'], r['ad_document_vec'])
+    user_ad_prod = sparse_vector_mul(r['user_profile'], r['ad_document_vec'])
+    row_dict['user_ad_prod'] = user_ad_prod
+    row_dict['doc_ad_prod'] = doc_ad_prod
+    row_dict['user_doc_prod'] = user_doc_prod
+    return Row(**row_dict)
 
 
 def transform_dataset(df):
@@ -78,14 +93,14 @@ def transform_dataset(df):
              .withColumnRenamed('document_vec', 'ad_document_vec')
              .join(cam_vecs, on='campaign_id')
              .drop('campaign_id')
-             .join(uuid_vecs, on='uuid')
+             .join(user_profile, on='uuid')
              .drop('uuid')
              .withColumnRenamed('display_document_id', 'document_id')
              .join(doc_vecs_concat, on='document_id')
              .drop('document_id'))
     print '###### Schema check'
     print newdf.schema
-    newdf = newdf.map(
+    newdf = newdf.map(profile_factor_mapper).map(
             lambda r: Row(
                 display_id=r['display_id'],
                 ad_id=r['ad_id'],
@@ -100,8 +115,8 @@ print '==============================='
 print 'Transforming dataset for training'
 print '==============================='
 train_set = transform_dataset(clicks_train)
-train_set.write.parquet('train_transformed_withpv')
+train_set.write.parquet('train_transformed_nopv_withprofile')
 valid_set = transform_dataset(clicks_valid)
-valid_set.write.parquet('valid_transformed_withpv')
+valid_set.write.parquet('valid_transformed_nopv_withprofile')
 test_set = transform_dataset(clicks_test)
-test_set.write.parquet('test_transformed_withpv')
+test_set.write.parquet('test_transformed_nopv_withprofile')

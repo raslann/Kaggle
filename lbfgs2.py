@@ -13,8 +13,8 @@ sc.addPyFile('apk.py')
 
 regs = [1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 0.1]
 
-train = sqlContext.read.parquet('train_transformed_withpv_withprofile')
-valid = sqlContext.read.parquet('valid_transformed_withpv_withprofile')
+train = sqlContext.read.parquet('train_transformed_nopv_withprofile')
+valid = sqlContext.read.parquet('valid_transformed_nopv_withprofile')
 train_set = train.map(lambda r: LabeledPoint(r['label'], r['features']))
 max_mapk = 0
 best_reg = 0
@@ -50,4 +50,4 @@ model = LogisticRegressionWithLBFGS.train(
         )
 w = model.weights
 b = model.intercept
-NP.savez('lbfgs-withprofile.npz', w=NP.array(w), b=float(b))
+NP.savez('lbfgs-withprofile-nopv.npz', w=NP.array(w), b=float(b))

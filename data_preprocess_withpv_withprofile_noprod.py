@@ -49,6 +49,8 @@ cam_vecs = sqlContext.read.parquet('cam_vecs')
 uuid_vecs = sqlContext.read.parquet('uuid_vecs')
 doc_vecs_concat = sqlContext.read.parquet('doc_vecs_concat')
 ad_meta_vecs = sqlContext.read.parquet('ad_meta_vecs')
+user_profile = (sqlContext.read.parquet('user_profile')
+                .toDF('uuid', 'user_profile'))
 
 print '==============================='
 print 'Vectors loaded'
@@ -61,6 +63,7 @@ feature_columns = [
         'ad_meta_vec',
         'document_vec',
         'ad_document_vec',
+        'user_profile',
         ]
 
 
@@ -79,13 +82,18 @@ def transform_dataset(df):
              .join(cam_vecs, on='campaign_id')
              .drop('campaign_id')
              .join(uuid_vecs, on='uuid')
+             .join(user_profile, on='uuid')
              .drop('uuid')
              .withColumnRenamed('display_document_id', 'document_id')
              .join(doc_vecs_concat, on='document_id')
              .drop('document_id'))
     print '###### Schema check'
     print newdf.schema
-    newdf = newdf.map(
+    return newdf
+
+
+def concat_dataset(df):
+    newdf = df.map(
             lambda r: Row(
                 display_id=r['display_id'],
                 ad_id=r['ad_id'],
@@ -100,8 +108,8 @@ print '==============================='
 print 'Transforming dataset for training'
 print '==============================='
 train_set = transform_dataset(clicks_train)
-train_set.write.parquet('train_transformed_withpv')
+concat_dataset(train_set).write.parquet('train_transformed_withpv_withprofile_noprod')
 valid_set = transform_dataset(clicks_valid)
-valid_set.write.parquet('valid_transformed_withpv')
+concat_dataset(valid_set).write.parquet('valid_transformed_withpv_withprofile_noprod')
 test_set = transform_dataset(clicks_test)
-test_set.write.parquet('test_transformed_withpv')
+concat_dataset(test_set).write.parquet('test_transformed_withpv_withprofile_noprod')

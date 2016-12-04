@@ -20,7 +20,6 @@ doc_top = read_hdfs_csv(sqlContext, 'documents_topics.csv')
 doc_meta = read_hdfs_csv(sqlContext, 'documents_meta.csv')
 events = read_hdfs_csv(sqlContext, 'events.csv')
 promo = read_hdfs_csv(sqlContext, 'promoted_content.csv').drop('document_id')
-page_views = read_hdfs_csv(sqlContext, 'page_views.csv')
 
 print '==============================='
 print 'Data loaded'
@@ -40,7 +39,7 @@ print '==============================='
 # Click/browse ratio of an Ad
 
 # Compute the offset for each feature on the sparse vector.
-num_docs = nunique(page_views, page_views.document_id)
+num_docs = nunique(doc_meta, doc_meta.document_id)
 num_cats = nunique(doc_cat, doc_cat.category_id)
 num_ents = nunique(doc_ent, doc_ent.entity_id)
 num_tops = nunique(doc_top, doc_top.topic_id)
@@ -109,9 +108,6 @@ else:
     pub_idx = sqlContext.read.parquet('pub_idx')
     uuid_idx = sqlContext.read.parquet('uuid_idx')
 
-page_views_idx = page_views.join(doc_idx, on='document_id')
-page_views_idx = page_views_idx.join(uuid_idx, on='uuid')
-
 # Sanity checks...
 assert doc_cat_idx.count() == doc_cat.count()
 assert doc_ent_idx.count() == doc_ent.count()
@@ -145,23 +141,6 @@ def one_hot_stringify(df, size, off, key, vec_name):
             .withColumnRenamed('_1', key)
             .withColumnRenamed('_2', vec_name))
 
-
-# Other one-hot encodings
-page_views_count = page_views_idx.groupby(
-        'uuid', 'uuid_idx', 'document_id', 'document_idx'
-        ).count()
-page_views_mapped = page_views_count.map(
-        lambda r: (
-            r['uuid'],
-            Vectors.sparse(
-                num_docs,
-                [r['document_idx']],
-                [r['count']]
-                )
-            )
-        )
-page_views_reduced = page_views_mapped.reduceByKey(sparse_vector_add)
-uuid_vecs = page_views_reduced.toDF().toDF('uuid', 'uuid_vec')
 adv_vecs = one_hot_encode(adv_idx, num_advs, 0, 'advertiser_id',
                           'advertiser_vec')
 cam_vecs = one_hot_encode(cam_idx, num_cams, 0, 'campaign_id',
@@ -211,6 +190,7 @@ ad_meta_vecs = (
             )
         .toDF()
         )
+assert ad_meta_vecs.count() == ad_idx.count()
 
 
 # Encode documents into SparseVector's.
@@ -245,25 +225,19 @@ doc_top_vec = doc_encoder(
         doc_top_idx, num_tops, 0, 'document_id',
         'topic_idx', 'confidence_level', 'topic_vec')
 
-assert doc_meta.count() == doc_idx.count()
 doc_vecs = (doc_meta
             .drop('publish_time')
-            .join(src_vecs, on='source_id')
+            .join(src_vecs, on='source_id', how='left')
             .drop('source_id'))
-assert doc_vecs.count() == doc_idx.count()
 doc_vecs = (doc_vecs
-            .join(pub_vecs, on='publisher_id')
+            .join(pub_vecs, on='publisher_id', how='left')
             .drop('publisher_id'))
-assert doc_vecs.count() == doc_idx.count()
 doc_vecs = (doc_vecs
-            .join(doc_cat_vec, on='document_id', how='outer'))
-assert doc_vecs.count() == doc_idx.count()
+            .join(doc_cat_vec, on='document_id', how='left'))
 doc_vecs = (doc_vecs
-            .join(doc_ent_vec, on='document_id', how='outer'))
-assert doc_vecs.count() == doc_idx.count()
+            .join(doc_ent_vec, on='document_id', how='left'))
 doc_vecs = (doc_vecs
-            .join(doc_top_vec, on='document_id', how='outer'))
-assert doc_vecs.count() == doc_idx.count()
+            .join(doc_top_vec, on='document_id', how='left'))
 print '###### Schema check'
 print doc_vecs.schema
 doc_vecs = (
@@ -288,10 +262,30 @@ doc_vecs = (
         .withColumnRenamed('_5', 'entity_vec')
         .withColumnRenamed('_6', 'topic_vec')
         )
-assert doc_vecs.count() == doc_idx.count()
 print '==============================='
 print 'Document sparse vector encoded'
 print '==============================='
+
+page_views = read_hdfs_csv(sqlContext, 'page_views.csv')
+page_views_idx = page_views.join(doc_idx, on='document_id')
+page_views_idx = page_views_idx.join(uuid_idx, on='uuid')
+
+page_views_count = page_views_idx.groupby(
+        'uuid', 'uuid_idx', 'document_id', 'document_idx'
+        ).count()
+page_views_mapped = page_views_count.map(
+        lambda r: (
+            r['uuid'],
+            Vectors.sparse(
+                num_docs,
+                [r['document_idx']],
+                [r['count']]
+                )
+            )
+        )
+page_views_reduced = page_views_mapped.reduceByKey(sparse_vector_add)
+uuid_vecs = page_views_reduced.toDF().toDF('uuid', 'uuid_vec')
+
 adv_vecs.write.parquet('adv_vecs')
 cam_vecs.write.parquet('cam_vecs')
 uuid_vecs.write.parquet('uuid_vecs')

@@ -46,21 +46,29 @@ print '==============================='
 
 adv_vecs = sqlContext.read.parquet('adv_vecs')
 cam_vecs = sqlContext.read.parquet('cam_vecs')
-uuid_vecs = sqlContext.read.parquet('uuid_vecs')
 doc_vecs_concat = sqlContext.read.parquet('doc_vecs_concat')
 ad_meta_vecs = sqlContext.read.parquet('ad_meta_vecs')
+user_profile = (sqlContext.read.parquet('user_profile')
+                .toDF('uuid', 'user_profile'))
+
+ad_meta_vecs = ad_meta_vecs.map(
+        lambda r: Row(
+            ad_id=r.ad_id,
+            ad_meta_vec=Vectors.sparse(1, [0], [r.ad_meta_vec[2]])
+            )
+        ).toDF()
 
 print '==============================='
 print 'Vectors loaded'
 print '==============================='
 
 feature_columns = [
-        'uuid_vec',
         'advertiser_vec',
         'campaign_vec',
         'ad_meta_vec',
         'document_vec',
         'ad_document_vec',
+        'user_profile',
         ]
 
 
@@ -78,14 +86,18 @@ def transform_dataset(df):
              .withColumnRenamed('document_vec', 'ad_document_vec')
              .join(cam_vecs, on='campaign_id')
              .drop('campaign_id')
-             .join(uuid_vecs, on='uuid')
+             .join(user_profile, on='uuid')
              .drop('uuid')
              .withColumnRenamed('display_document_id', 'document_id')
              .join(doc_vecs_concat, on='document_id')
              .drop('document_id'))
     print '###### Schema check'
     print newdf.schema
-    newdf = newdf.map(
+    return newdf
+
+
+def concat_dataset(df):
+    newdf = df.map(
             lambda r: Row(
                 display_id=r['display_id'],
                 ad_id=r['ad_id'],
@@ -100,8 +112,8 @@ print '==============================='
 print 'Transforming dataset for training'
 print '==============================='
 train_set = transform_dataset(clicks_train)
-train_set.write.parquet('train_transformed_withpv')
+train_set.write.parquet('train_transformed_withpv_withprofile_noprod_separate')
 valid_set = transform_dataset(clicks_valid)
-valid_set.write.parquet('valid_transformed_withpv')
+valid_set.write.parquet('valid_transformed_withpv_withprofile_noprod_separate')
 test_set = transform_dataset(clicks_test)
-test_set.write.parquet('test_transformed_withpv')
+test_set.write.parquet('test_transformed_withpv_withprofile_noprod_separate')
