@@ -12,7 +12,7 @@ from threading import Thread
 import urllib2
 import urlparse
 
-"""Lightning-Fast Deep Learning on Spark
+
 """
 class DeepDist:
     def __init__(self, model, master='127.0.0.1:5000', min_updates=0, max_updates=4096):
