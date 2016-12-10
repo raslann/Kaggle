@@ -3,8 +3,8 @@ Outbrain pairs relevant content with curious readers in about 250 billion person
 
 # Full Report: 
  
-To view full report including problem definiation, data preparation, models and evaluation metrics, and deploymnet, please navigate to this file: #outbrain-click-prediction_report.pdf 
+To view full report including problem definiation, data preparation, models and evaluation metrics, and deploymnet, please navigate to this file: "outbrain-click-prediction_report.pdf"
 
 # Models: 
 
-To view models source code including Logistic Regression, Factorization Machines, Random forest, and Multilayer Perceptron, please naviate to this folder: #src
+To view models source code including Logistic Regression, Factorization Machines, Random forest, and Multilayer Perceptron, please naviate to this folder: "src"
