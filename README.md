@@ -8,3 +8,5 @@ To view full report including problem definiation, data preparation, models and 
 # Models: 
 
 To view models source code including Logistic Regression, Factorization Machines, Random forest, and Multilayer Perceptron, please naviate to this folder: "src"
+
+![alt text](https://github.com/raslann/Kaggle/blob/master/outbrain-click-prediction_report.pdf)
